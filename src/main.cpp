@@ -1,5 +1,7 @@
 #include "raylib.h"
 #include "raymath.h"
+#include <vector>
+using namespace std;
 
 void SetSoundPosition2D(Vector2 listenerPos, float listenerRot, Sound sound, Vector2 sourcePos, float maxDist);
 
@@ -27,9 +29,8 @@ struct Player {
 		float rotSpeed = 120.0f; // degrees per second
 
 		if (tankControls) {
-			// 🕹️ Tank-style movement
-			if (IsKeyDown(KEY_A)) rotation -= rotSpeed * dt; // Turn left
-			if (IsKeyDown(KEY_D)) rotation += rotSpeed * dt; // Turn right
+			if (IsKeyDown(KEY_A)) rotation -= rotSpeed * dt;
+			if (IsKeyDown(KEY_D)) rotation += rotSpeed * dt; 
 
 			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed * dt));
 			if (IsKeyDown(KEY_S)) position = Vector2Subtract(position, Vector2Scale(forward, speed * dt));
@@ -37,7 +38,6 @@ struct Player {
 			if (IsKeyDown(KEY_E)) position = Vector2Add(position, Vector2Scale(right, speed * dt));
 		}
 		else {
-			// 🎯 Free-movement (mouse aim) mode
 			rotation += GetMouseDelta().x * sensitivity;
 
 			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed * dt));
@@ -59,26 +59,58 @@ struct Player {
 	}
 };
 
+struct SoundManager {
+	Sound orcWalk, orcWindup, orcAttack;
+	Sound skeletonWalk, skeletonWindup, skeletonAttack;
+
+	void Load() {
+		orcWalk  = LoadSound("resources/orc_walk.wav");
+		orcWindup = LoadSound("resources/orc_windup.wav");
+		orcAttack = LoadSound("resources/orc_attack.wav");
+
+		skeletonWalk  = LoadSound("resources/skeleton_walk.wav");
+		skeletonWindup = LoadSound("resources/skeleton_windup.wav");
+		skeletonAttack = LoadSound("resources/skeleton_attack.wav");
+	}
+
+	void Unload() {
+		UnloadSound(orcWalk);
+		UnloadSound(orcWindup);
+		UnloadSound(orcAttack);
+		UnloadSound(skeletonWalk);
+		UnloadSound(skeletonWindup);	
+		UnloadSound(skeletonAttack);
+	}
+};
+
 struct Enemy {
 	enum EnemyType { ORC, SKELETON };
 	enum State { WALKING, WINDUP, ATTACKING } state;
 
 	Vector2 position;
-	Sound sound;
 	Color color;
 	float speed;
 	float attackRange;
-	
+
 	float stateTimer;
 	float windupTime;
 	float attackTime;
 	Vector2 attackDir;
 
-	Enemy(Vector2 pos, EnemyType type = ORC) {
+	Sound walkSound;
+	Sound windupSound;
+	Sound attackSound;
+
+	Sound currentSound;
+
+
+	Enemy(Vector2 pos, EnemyType type, SoundManager &sm) {
 		position = pos;
 		switch (type) {
 			case ORC:
-				sound = LoadSound("resources/orc.wav");
+				walkSound = LoadSoundAlias(sm.orcWalk);
+				windupSound = LoadSoundAlias(sm.orcWindup);
+				attackSound = LoadSoundAlias(sm.orcAttack);
 				color = GREEN;
 				speed = 50.0f;
 				attackRange = 40.0f;
@@ -86,7 +118,9 @@ struct Enemy {
 				attackTime = 0.4f;
 				break;
 			case SKELETON:
-				sound = LoadSound("resources/bones.wav");
+				walkSound = LoadSoundAlias(sm.skeletonWalk);
+				windupSound = LoadSoundAlias(sm.skeletonWindup);
+				attackSound = LoadSoundAlias(sm.skeletonAttack);
 				color = GRAY;
 				speed = 80.0f;
 				attackRange = 35.0f;
@@ -96,7 +130,9 @@ struct Enemy {
 		}
 		state = WALKING;
 		stateTimer = 0.0f;
+		currentSound = walkSound;
 	}
+
 
 	void Update(Vector2 playerPos, float listenerRot, float dt) {
 		Vector2 toPlayer = Vector2Subtract(playerPos, position);
@@ -105,25 +141,27 @@ struct Enemy {
 
 		stateTimer += dt;
 
+		// Handle state
 		switch (state) {
 			case WALKING:
-				if (distance > attackRange) {
-					position = Vector2Add(position, Vector2Scale(dir, speed * dt));
-				} else {
+				currentSound = walkSound;
+				if (distance <= attackRange) {
 					state = WINDUP;
 					stateTimer = 0.0f;
 					attackDir = dir;
+				} else {
+					position = Vector2Add(position, Vector2Scale(dir, speed * dt));
 				}
 				break;
-
 			case WINDUP:
+				currentSound = windupSound;
 				if (stateTimer >= windupTime) {
 					state = ATTACKING;
 					stateTimer = 0.0f;
 				}
 				break;
-
 			case ATTACKING:
+				currentSound = attackSound;
 				if (stateTimer >= attackTime) {
 					state = WALKING;
 					stateTimer = 0.0f;
@@ -131,9 +169,12 @@ struct Enemy {
 				break;
 		}
 
-		if (!IsSoundPlaying(sound)) PlaySound(sound);
-		SetSoundPosition2D(playerPos, listenerRot, sound, position, 100.0f);
+		// Play the sound if it's not playing
+		if (!IsSoundPlaying(currentSound)) PlaySound(currentSound);
+
+		SetSoundPosition2D(playerPos, listenerRot, currentSound, position, 50.0f);
 	}
+
 
 	void Draw() {
 		DrawCircleV(position, 10, color);
@@ -152,10 +193,6 @@ struct Enemy {
 			);
 		}
 	}
-
-	~Enemy() {
-		UnloadSound(sound);
-	}
 };
 
 int main() {
@@ -168,30 +205,43 @@ int main() {
 	DisableCursor();
 
 	Player player = { { screenWidth / 2.0f, screenHeight / 2.0f } };
+	SoundManager sm;
+	sm.Load();
 
-	// Different enemy types
-	Enemy orc({ 600, 400 }, Enemy::ORC);
-	Enemy skeleton({ 800, 500 }, Enemy::SKELETON);
+	vector<Enemy> enemies;
+
+	enemies.emplace_back(Vector2{600, 400}, Enemy::ORC, sm);
+	enemies.emplace_back(Vector2{800, 500}, Enemy::SKELETON, sm);
 
 	while (!WindowShouldClose()) {
 		float dt = GetFrameTime();
 
 		player.Update(dt);
 
-		orc.Update(player.position, player.rotation, dt);
-		skeleton.Update(player.position, player.rotation, dt);
+		for (auto &e : enemies) {
+    		e.Update(player.position, player.rotation, dt);
+		}
+
+		if (IsKeyPressed(KEY_SPACE)) { // debug: spawn enemy
+    		Vector2 spawnPos = { (float)GetRandomValue(100, screenWidth-100), (float)GetRandomValue(100, screenHeight-100) };
+    		Enemy::EnemyType type = (GetRandomValue(0, 1) == 0) ? Enemy::ORC : Enemy::SKELETON;
+    		enemies.emplace_back(spawnPos, type, sm);
+		}
+
 
 		BeginDrawing();
 		ClearBackground(BLACK);
 
 		player.Draw();
-		orc.Draw();
-		skeleton.Draw();
+		for (auto &e : enemies) {
+    		e.Draw();
+		}
+
 
 		DrawText("WS to move, AD to rotate", 20, 20, 20, GRAY);
 		EndDrawing();
 	}
-
+	sm.Unload();
 	CloseAudioDevice();
 	CloseWindow();
 	return 0;
