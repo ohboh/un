@@ -59,16 +59,16 @@ struct Player {
 	}
 };
 
-enum EnemyType { ORC, SKELETON };
-
 struct Enemy {
+	enum EnemyType { ORC, SKELETON };
+	enum State { WALKING, WINDUP, ATTACKING } state;
+
 	Vector2 position;
 	Sound sound;
 	Color color;
 	float speed;
 	float attackRange;
-
-	enum State { WALKING, WINDUP, ATTACKING } state;
+	
 	float stateTimer;
 	float windupTime;
 	float attackTime;
@@ -158,7 +158,6 @@ struct Enemy {
 	}
 };
 
-
 int main() {
 	const int screenWidth = 1280;
 	const int screenHeight = 720;
@@ -171,8 +170,8 @@ int main() {
 	Player player = { { screenWidth / 2.0f, screenHeight / 2.0f } };
 
 	// Different enemy types
-	Enemy orc({ 600, 400 }, ORC);
-	Enemy skeleton({ 800, 500 }, SKELETON);
+	Enemy orc({ 600, 400 }, Enemy::ORC);
+	Enemy skeleton({ 800, 500 }, Enemy::SKELETON);
 
 	while (!WindowShouldClose()) {
 		float dt = GetFrameTime();
