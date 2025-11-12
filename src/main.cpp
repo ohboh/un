@@ -14,34 +14,36 @@ struct Player {
 	Player(Vector2 pos, bool useTankControls = true) {
 		position = pos;
 		rotation = 0;
-		speed = 3;
+		speed = 100;
 		size = 20;
 		sensitivity = 0.25f;
 		tankControls = useTankControls;
 	}
 
-	void Update() {
-        Vector2 forward = Vector2Rotate({ 1, 0 }, DEG2RAD * rotation);
-        Vector2 right = Vector2Rotate({ 0, 1 }, DEG2RAD * rotation);
+	void Update(float dt) {
+		Vector2 forward = Vector2Rotate({ 1, 0 }, DEG2RAD * rotation);
+		Vector2 right = Vector2Rotate({ 0, 1 }, DEG2RAD * rotation);
+
+		float rotSpeed = 120.0f; // degrees per second
 
 		if (tankControls) {
 			// 🕹️ Tank-style movement
-			if (IsKeyDown(KEY_A)) rotation -= 2.0f; // Turn left
-			if (IsKeyDown(KEY_D)) rotation += 2.0f; // Turn right
+			if (IsKeyDown(KEY_A)) rotation -= rotSpeed * dt; // Turn left
+			if (IsKeyDown(KEY_D)) rotation += rotSpeed * dt; // Turn right
 
-			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed));
-			if (IsKeyDown(KEY_S)) position = Vector2Subtract(position, Vector2Scale(forward, speed));
-            if (IsKeyDown(KEY_Q)) position = Vector2Subtract(position, Vector2Scale(right, speed));
-			if (IsKeyDown(KEY_E)) position = Vector2Add(position, Vector2Scale(right, speed));
+			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed * dt));
+			if (IsKeyDown(KEY_S)) position = Vector2Subtract(position, Vector2Scale(forward, speed * dt));
+			if (IsKeyDown(KEY_Q)) position = Vector2Subtract(position, Vector2Scale(right, speed * dt));
+			if (IsKeyDown(KEY_E)) position = Vector2Add(position, Vector2Scale(right, speed * dt));
 		}
 		else {
 			// 🎯 Free-movement (mouse aim) mode
 			rotation += GetMouseDelta().x * sensitivity;
 
-			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed));
-			if (IsKeyDown(KEY_S)) position = Vector2Subtract(position, Vector2Scale(forward, speed));
-			if (IsKeyDown(KEY_A)) position = Vector2Subtract(position, Vector2Scale(right, speed));
-			if (IsKeyDown(KEY_D)) position = Vector2Add(position, Vector2Scale(right, speed));
+			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed * dt));
+			if (IsKeyDown(KEY_S)) position = Vector2Subtract(position, Vector2Scale(forward, speed * dt));
+			if (IsKeyDown(KEY_A)) position = Vector2Subtract(position, Vector2Scale(right, speed * dt));
+			if (IsKeyDown(KEY_D)) position = Vector2Add(position, Vector2Scale(right, speed * dt));
 		}
 	}
 
@@ -65,7 +67,12 @@ struct Enemy {
 	Color color;
 	float speed;
 	float attackRange;
-	enum State { WALKING, ATTACKING } state;
+
+	enum State { WALKING, WINDUP, ATTACKING } state;
+	float stateTimer;
+	float windupTime;
+	float attackTime;
+	Vector2 attackDir;
 
 	Enemy(Vector2 pos, EnemyType type = ORC) {
 		position = pos;
@@ -73,29 +80,55 @@ struct Enemy {
 			case ORC:
 				sound = LoadSound("resources/orc.wav");
 				color = GREEN;
-				speed = 1;
-				attackRange = 20.0f;
+				speed = 50.0f;
+				attackRange = 40.0f;
+				windupTime = 0.7f;
+				attackTime = 0.4f;
 				break;
 			case SKELETON:
 				sound = LoadSound("resources/bones.wav");
 				color = GRAY;
-				speed = 1.2f;
-				attackRange = 15.0f;
+				speed = 80.0f;
+				attackRange = 35.0f;
+				windupTime = 0.4f;
+				attackTime = 0.2f;
 				break;
 		}
-		PlaySound(sound);
+		state = WALKING;
+		stateTimer = 0.0f;
 	}
 
-	void Update(Vector2 playerPos, float listenerRot) {
+	void Update(Vector2 playerPos, float listenerRot, float dt) {
 		Vector2 toPlayer = Vector2Subtract(playerPos, position);
 		float distance = Vector2Length(toPlayer);
+		Vector2 dir = Vector2Normalize(toPlayer);
 
-		if (distance > attackRange) {
-			state = WALKING;
-			Vector2 dir = Vector2Normalize(toPlayer);
-			position = Vector2Add(position, Vector2Scale(dir, speed));
-		} else {
-			state = ATTACKING;
+		stateTimer += dt;
+
+		switch (state) {
+			case WALKING:
+				if (distance > attackRange) {
+					position = Vector2Add(position, Vector2Scale(dir, speed * dt));
+				} else {
+					state = WINDUP;
+					stateTimer = 0.0f;
+					attackDir = dir;
+				}
+				break;
+
+			case WINDUP:
+				if (stateTimer >= windupTime) {
+					state = ATTACKING;
+					stateTimer = 0.0f;
+				}
+				break;
+
+			case ATTACKING:
+				if (stateTimer >= attackTime) {
+					state = WALKING;
+					stateTimer = 0.0f;
+				}
+				break;
 		}
 
 		if (!IsSoundPlaying(sound)) PlaySound(sound);
@@ -104,12 +137,27 @@ struct Enemy {
 
 	void Draw() {
 		DrawCircleV(position, 10, color);
+
+		if (state == WINDUP || state == ATTACKING) {
+			Vector2 boxCenter = Vector2Add(position, Vector2Scale(attackDir, 25));
+			float boxSize = 20;
+
+			Color hitboxColor = (state == WINDUP) ? (Color){255, 255, 0, 100}   // yellow
+												  : (Color){255, 0, 0, 120};    // red
+
+			DrawRectangleV(
+				Vector2Subtract(boxCenter, {boxSize / 2, boxSize / 2}),
+				{ boxSize, boxSize },
+				hitboxColor
+			);
+		}
 	}
 
-	void Unload() {
+	~Enemy() {
 		UnloadSound(sound);
 	}
 };
+
 
 int main() {
 	const int screenWidth = 1280;
@@ -127,10 +175,12 @@ int main() {
 	Enemy skeleton({ 800, 500 }, SKELETON);
 
 	while (!WindowShouldClose()) {
-		player.Update();
+		float dt = GetFrameTime();
 
-		orc.Update(player.position, player.rotation);
-		skeleton.Update(player.position, player.rotation);
+		player.Update(dt);
+
+		orc.Update(player.position, player.rotation, dt);
+		skeleton.Update(player.position, player.rotation, dt);
 
 		BeginDrawing();
 		ClearBackground(BLACK);
@@ -139,12 +189,9 @@ int main() {
 		orc.Draw();
 		skeleton.Draw();
 
-		DrawText("WASD to move, mouse to rotate", 20, 20, 20, GRAY);
+		DrawText("WS to move, AD to rotate", 20, 20, 20, GRAY);
 		EndDrawing();
 	}
-
-	orc.Unload();
-	skeleton.Unload();
 
 	CloseAudioDevice();
 	CloseWindow();
