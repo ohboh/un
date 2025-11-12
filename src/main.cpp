@@ -27,23 +27,29 @@ struct Player {
 		Vector2 right = Vector2Rotate({ 0, 1 }, DEG2RAD * rotation);
 
 		float rotSpeed = 120.0f; // degrees per second
+		Vector2 move = { 0, 0 };
 
 		if (tankControls) {
 			if (IsKeyDown(KEY_A)) rotation -= rotSpeed * dt;
 			if (IsKeyDown(KEY_D)) rotation += rotSpeed * dt; 
 
-			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed * dt));
-			if (IsKeyDown(KEY_S)) position = Vector2Subtract(position, Vector2Scale(forward, speed * dt));
-			if (IsKeyDown(KEY_Q)) position = Vector2Subtract(position, Vector2Scale(right, speed * dt));
-			if (IsKeyDown(KEY_E)) position = Vector2Add(position, Vector2Scale(right, speed * dt));
+			if (IsKeyDown(KEY_W)) move = Vector2Add(move, forward);
+			if (IsKeyDown(KEY_S)) move = Vector2Subtract(move, forward);
+			if (IsKeyDown(KEY_Q)) move = Vector2Subtract(move, right);
+			if (IsKeyDown(KEY_E)) move = Vector2Add(move, right);
 		}
 		else {
 			rotation += GetMouseDelta().x * sensitivity;
 
-			if (IsKeyDown(KEY_W)) position = Vector2Add(position, Vector2Scale(forward, speed * dt));
-			if (IsKeyDown(KEY_S)) position = Vector2Subtract(position, Vector2Scale(forward, speed * dt));
-			if (IsKeyDown(KEY_A)) position = Vector2Subtract(position, Vector2Scale(right, speed * dt));
-			if (IsKeyDown(KEY_D)) position = Vector2Add(position, Vector2Scale(right, speed * dt));
+			if (IsKeyDown(KEY_W)) move = Vector2Add(move, forward);
+			if (IsKeyDown(KEY_S)) move = Vector2Subtract(move, forward);
+			if (IsKeyDown(KEY_A)) move = Vector2Subtract(move, right);
+			if (IsKeyDown(KEY_D)) move = Vector2Add(move, right);
+		}
+
+		if (Vector2Length(move) > 0) {
+			move = Vector2Normalize(move);
+			position = Vector2Add(position, Vector2Scale(move, speed * dt));
 		}
 	}
 
