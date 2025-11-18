@@ -4,6 +4,7 @@
 using namespace std;
 
 void SetSoundPosition2D(Vector2 listenerPos, float listenerRot, Sound sound, Vector2 sourcePos, float maxDist);
+void DrawCompass(Texture2D compass, float rotation);
 
 struct Player {
 	Vector2 position;
@@ -66,32 +67,41 @@ struct Player {
 };
 
 struct SoundManager {
-	Sound orcWalk, orcWindup, orcAttack;
-	Sound skeletonWalk, skeletonWindup, skeletonAttack;
+	Sound orcSpawn, orcWalk, orcWindup, orcAttack, orcDeath;
+	Sound skeletonSpawn, skeletonWalk, skeletonWindup, skeletonAttack, skeletonDeath;
 
 	void Load() {
+		orcSpawn  = LoadSound("resources/orc.wav");
 		orcWalk  = LoadSound("resources/orc_walk.wav");
 		orcWindup = LoadSound("resources/orc_windup.wav");
 		orcAttack = LoadSound("resources/orc_attack.wav");
+		orcDeath  = LoadSound("resources/orc.wav");
 
+		skeletonSpawn  = LoadSound("resources/bones.wav");
 		skeletonWalk  = LoadSound("resources/skeleton_walk.wav");
 		skeletonWindup = LoadSound("resources/skeleton_windup.wav");
 		skeletonAttack = LoadSound("resources/skeleton_attack.wav");
+		skeletonDeath  = LoadSound("resources/bones.wav");
 	}
 
 	void Unload() {
+		UnloadSound(orcSpawn);
 		UnloadSound(orcWalk);
 		UnloadSound(orcWindup);
 		UnloadSound(orcAttack);
+		UnloadSound(orcDeath);
+
+		UnloadSound(skeletonSpawn);
 		UnloadSound(skeletonWalk);
 		UnloadSound(skeletonWindup);	
 		UnloadSound(skeletonAttack);
+		UnloadSound(skeletonDeath);
 	}
 };
 
 struct Enemy {
 	enum EnemyType { ORC, SKELETON };
-	enum State { WALKING, WINDUP, ATTACKING } state;
+	enum State { SPAWNING, WALKING, WINDUP, ATTACKING, DYING } state;
 
 	Vector2 position;
 	Color color;
@@ -99,13 +109,16 @@ struct Enemy {
 	float attackRange;
 
 	float stateTimer;
+	float spawnTime;
 	float windupTime;
 	float attackTime;
 	Vector2 attackDir;
 
+	Sound spawnSound;
 	Sound walkSound;
 	Sound windupSound;
 	Sound attackSound;
+	Sound deathSound;
 
 	Sound currentSound;
 
@@ -114,27 +127,35 @@ struct Enemy {
 		position = pos;
 		switch (type) {
 			case ORC:
+				spawnSound = LoadSoundAlias(sm.orcSpawn);
 				walkSound = LoadSoundAlias(sm.orcWalk);
 				windupSound = LoadSoundAlias(sm.orcWindup);
 				attackSound = LoadSoundAlias(sm.orcAttack);
+				deathSound = LoadSoundAlias(sm.orcDeath);
+
 				color = GREEN;
 				speed = 50.0f;
+				spawnTime = 1.0f;
 				attackRange = 40.0f;
 				windupTime = 0.7f;
 				attackTime = 0.4f;
 				break;
 			case SKELETON:
+				spawnSound = LoadSoundAlias(sm.skeletonSpawn);
 				walkSound = LoadSoundAlias(sm.skeletonWalk);
 				windupSound = LoadSoundAlias(sm.skeletonWindup);
 				attackSound = LoadSoundAlias(sm.skeletonAttack);
+				deathSound = LoadSoundAlias(sm.skeletonDeath);
+
 				color = GRAY;
 				speed = 80.0f;
+				spawnTime = 0.5f;
 				attackRange = 35.0f;
 				windupTime = 0.4f;
 				attackTime = 0.2f;
 				break;
 		}
-		state = WALKING;
+		state = SPAWNING;
 		stateTimer = 0.0f;
 		currentSound = walkSound;
 	}
@@ -149,6 +170,13 @@ struct Enemy {
 
 		// Handle state
 		switch (state) {
+			case SPAWNING:
+				currentSound = spawnSound;
+				if (stateTimer >= spawnTime) {
+					state = WALKING;
+					stateTimer = 0.0f;
+				}
+				break;
 			case WALKING:
 				currentSound = walkSound;
 				if (distance <= attackRange) {
@@ -172,6 +200,9 @@ struct Enemy {
 					state = WALKING;
 					stateTimer = 0.0f;
 				}
+				break;
+			case DYING:
+				// Not implemented in this example
 				break;
 		}
 
@@ -213,16 +244,18 @@ int main() {
 	Player player = { { screenWidth / 2.0f, screenHeight / 2.0f } };
 	SoundManager sm;
 	sm.Load();
+	Texture2D compass = LoadTexture("resources/compass.png");
 
 	vector<Enemy> enemies;
 
-	enemies.emplace_back(Vector2{600, 400}, Enemy::ORC, sm);
-	enemies.emplace_back(Vector2{800, 500}, Enemy::SKELETON, sm);
+	//enemies.emplace_back(Vector2{600, 400}, Enemy::ORC, sm);
+	//enemies.emplace_back(Vector2{800, 500}, Enemy::SKELETON, sm);
 
 	while (!WindowShouldClose()) {
 		float dt = GetFrameTime();
 
 		player.Update(dt);
+		DrawCompass(compass, player.rotation);
 
 		for (auto &e : enemies) {
     		e.Update(player.position, player.rotation, dt);
@@ -273,3 +306,22 @@ void SetSoundPosition2D(Vector2 listenerPos, float listenerRot, Sound sound, Vec
     SetSoundVolume(sound, attenuation);
     SetSoundPan(sound, pan);
 }
+
+void DrawCompass(Texture2D compass, float rotation)
+{
+	float size = 320;
+    Vector2 pos = { size/2, size/2 };
+    Rectangle src = { 0, 0, (float)compass.width, (float)compass.height };
+    Rectangle dest = { pos.x, pos.y, size, size }; 
+    Vector2 origin = { size/2, size/2 };
+
+    DrawTexturePro(
+        compass,
+        src,
+        dest,
+        origin,
+        rotation, // degrees
+        WHITE
+    );
+}
+
